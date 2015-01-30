@@ -1,0 +1,42 @@
+1. replace checking num of arguments with getopt
+2. labels modify
+3. repair eeror with scaling
+4. klasa punkt
+5. obsluga kolorowych i szarychobrazkow - wykrywanie 3 wymiaru
+6. odwrocone xy
+7. czy scale points potrzebne
+8. kolor lini
+9. wyciagnac tylko te ktore sasiaduja
+10. pogrubpowanie sasiadow w kolumnach
+11. grupowac i wybrac tego sredniego ktory jest najblizszy do ostatniego!
+12. isc do sasiada o najblizszej odleglosci jesli nie ma po krosie
+13. wczesniej zrobic osobne tabele pixeli a nie w negihbour! optymalizacja!
+14. neighbour kolor liczyc wczesniej
+15. po saturacji jeszcze tolerancja? zeby problemy z czarnym usunac
+16. czerwony i rozowy zostana uznany za jeden - poprawic
+17. oprocz saturacji jeszcze zrobic odleglosc w lab
+18. usrednianie po kolorach
+19. przy przecinaniu zeby nie usuwalo czy cos takieog
+20. dziury na przejsciu
+
+od korusa:
+legenda - musi byc w kwadracie -> przeparsowac ->pgfplots legenda -> dopasowanielini do legendy - kolor
+przygotowac strone
+rozpoznawanie sasiadow na pixelach - nie po skalowaniu
+
+rozpoznawanie odleglosci miedzy labelami -logarytmiczne
+
+poprawienie wykrywania skali
+poprawienie wykresow w zlych miejsach - po usrednianiu - czy bedzie potrzebne
+
+sasiadady - branie lini w pionie i szukanie srododkowego - przechodzenie po srodkowych!!!!!
+
+interfejs - gui lub cmd - getopt
+domyslne wartosci parametrow - dobrac
+
+
+rozpoznawanie sasiada:
+w pierwszej kolejnosci: 1. kolory
+2. kąt
+
+
