@@ -18,6 +18,15 @@
 18. usrednianie po kolorach
 19. przy przecinaniu zeby nie usuwalo czy cos takieog
 20. dziury na przejsciu
+21. nie uzywac plikow przy cropowaniu
+22. zoptymalizowac usuwanie lini
+23. zmeinic usuwanie labeli - najczesntszy a nie najdluzszy
+24. improve change axis
+25. usuwac punkty do liczenia, ale do tras uzywac wsztskch? - zribione ale dziala wolno
+26 . 25- czasem nie dziala
+26. przyspieszyc calosc
+27. zle zadziala kat na 2.png - zrobione- pomoga zwiekszenie ilosci kontow
+28. grupowanie po kolorach!!
 
 od korusa:
 legenda - musi byc w kwadracie -> przeparsowac ->pgfplots legenda -> dopasowanielini do legendy - kolor
