@@ -9,8 +9,13 @@ from neighbour import neighbour, angle
 import labels
 import os
 
-angles_thr = 25 #parameter, number of angles to calculate mean
+angles_thr = 50 #parameter, number of angles to calculate mean
 line_thr = 10 #parameter, minimum number of pixels to be treated as line
+colors_thr = 10 #parameter, minimum numnber of color pixels to be grouped
+border_len = 5 #parameter, number of border pixels
+labels_lines_len = 50 #parameter, number of pixels for labels lines
+label_line_len_min = 5 #parameter, minimum lenght of label line
+#add thr for dicts
 
 class Image:
     def __init__(self,path):
@@ -35,6 +40,10 @@ class Image:
             ret,thresh = cv2.threshold(gray,127,255,1)
             contours,h = cv2.findContours(thresh,1,cv2.CHAIN_APPROX_SIMPLE) #find counters with aproximation to n-points
             img_area = gray.shape[0]*gray.shape[1]
+
+            #image area max: todo: improve
+
+
             max_area = 0
             for cnt in contours:
                 approx = cv2.approxPolyDP(cnt,0.01*cv2.arcLength(cnt,True),True)
@@ -43,6 +52,7 @@ class Image:
                     if area > max_area:
                         max_area = area
                         last_shape = approx
+
 
             percentage = max_area/float(img_area)*100
             print "Found inside image. " + str(int(percentage)) + "% of image."
@@ -84,7 +94,6 @@ class Image:
     def crop(self):
         print "Cropping inside image..."
 
-
         #corners
         x_min = min(self.x_axis_points)
         x_max = max(self.x_axis_points)
@@ -99,7 +108,7 @@ class Image:
     def find_pixels(self):
         print "Finding pixels..."
         self.pixels = []
-        self.colors = [] #all kinds of colors in image
+        self.colors = {} #all kinds of colors in image
         for x in xrange(self.inside_img.shape[0]):
             for y in xrange(self.inside_img.shape[1]):
                 rgb_values = self.inside_img[x,y]
@@ -122,8 +131,11 @@ class Image:
 
                     new_pixel = Pixel(y,x,rgb_values[0],rgb_values[1],rgb_values[2])
 
-                    if rgb_values not in self.colors:
-                        self.colors.append(rgb_values)
+                    rgb_tuple = tuple(rgb_values)
+                    if rgb_tuple not in self.colors:
+                        self.colors[rgb_tuple] = 1
+                    else:
+                        self.colors[rgb_tuple] += 1
                     self.pixels.append(new_pixel)
 
     def remove_border_lines(self):
@@ -131,44 +143,57 @@ class Image:
         x_points = {}
         y_points = {}
 
+        self.x_min = min(self.pixels, key=lambda pixel: pixel.x).x
+        self.x_max = max(self.pixels, key=lambda pixel: pixel.x).x
+        self.y_min = min(self.pixels, key=lambda pixel: pixel.y).y
+        self.y_max = max(self.pixels, key=lambda pixel: pixel.y).y
+
         for item in self.pixels:
 
             x = item.x
             y = item.y
 
-            if x in x_points:
-                x_points[x] = x_points[x] + 1
-            else:
-                x_points[x] = 1
 
-            if y in y_points:
-                y_points[y] = y_points[y] + 1
-            else:
-                y_points[y] = 1
+            if (x <= self.x_min+border_len or
+                x >= self.x_max-border_len or
+                y <= self.y_min+border_len or
+                y >= self.y_max-border_len):
 
-            x_mean = 0
-            y_mean = 0
 
-            for key in x_points:
-                x_mean += x_points[key]
-            x_mean = x_mean/len(x_points)
 
-            for key in y_points:
-                y_mean += y_points[key]
-            y_mean = y_mean/len(y_points)
+                if x in x_points:
+                    x_points[x] = x_points[x] + 1
+                else:
+                    x_points[x] = 1
 
-            #average points number
-            #if a-times more that avg then remove
-            #candidates to remove
+                if y in y_points:
+                    y_points[y] = y_points[y] + 1
+                else:
+                    y_points[y] = 1
 
-            thr = 10 #a-times parameter
+                x_mean = 0
+                y_mean = 0
 
-            new_x = {k: v for k, v in x_points.iteritems() if v > thr*x_mean}.keys()
-            new_y = {k: v for k, v in y_points.iteritems() if v > thr*y_mean}.keys()
+                for key in x_points:
+                    x_mean += x_points[key]
+                x_mean = x_mean/len(x_points)
 
-            new_pixels = []
+                for key in y_points:
+                    y_mean += y_points[key]
+                y_mean = y_mean/len(y_points)
 
-            #removing points
+                #average points number
+                #if a-times more that avg then remove
+                #candidates to remove
+
+                thr = 10 #a-times parameter
+
+                new_x = {k: v for k, v in x_points.iteritems() if v > thr*x_mean}.keys()
+                new_y = {k: v for k, v in y_points.iteritems() if v > thr*y_mean}.keys()
+
+        new_pixels = []
+
+        #removing points
 
         for item in self.pixels:
             x = item.x
@@ -180,26 +205,168 @@ class Image:
         self.pixels = new_pixels
 
     def remove_labels_lines(self):
-        pass
+        new_pixels = []
+
+        black = [0,0,0]
+        #find border pixels
+
+        left = [pixel for pixel in self.pixels if pixel.x < self.x_min+labels_lines_len and black == pixel.rgb()]
+        right = [pixel for pixel in self.pixels if pixel.x > self.x_max-labels_lines_len and black == pixel.rgb()]
+        up = [pixel for pixel in self.pixels if pixel.y < self.y_min+labels_lines_len and black == pixel.rgb()]
+        down = [pixel for pixel in self.pixels if pixel.y > self.y_max-labels_lines_len and black == pixel.rgb()]
+
+        y_left_points = {}
+        y_right_points = {}
+        x_up_points = {}
+        x_down_points = {}
+
+
+        #count number of pixel instances in line
+        for pixel in left:
+            if pixel.y in y_left_points:
+                y_left_points[pixel.y] += 1
+            else:
+                y_left_points[pixel.y] = 0
+
+        for pixel in right:
+            if pixel.y in y_right_points:
+                y_right_points[pixel.y] += 1
+            else:
+                y_right_points[pixel.y] = 0
+
+        for pixel in up:
+            if pixel.x in x_up_points:
+                x_up_points[pixel.x] += 1
+            else:
+                x_up_points[pixel.x] = 0
+
+        for pixel in down:
+            if pixel.x in x_down_points:
+                x_down_points[pixel.x] += 1
+            else:
+                x_down_points[pixel.x] = 0
+
+
+
+
+        '''
+        for [key,value] in y_left_points.items():
+            print key, value
+
+        self.choose_label_distance(y_left_points)
+
+        raw_input("stop after 1")
+        print "---\n"
+
+        for [key,value] in y_right_points.items():
+            print key, value
+
+        print "---\n"
+
+        for [key,value] in x_down_points.items():
+            print key, value
+
+        print "---\n"
+
+        for [key,value] in x_up_points.items():
+            print key, value
+        '''
+
+        #choose distance label
+        y_left_distance = self.choose_label_distance(y_left_points)
+        y_right_distance = self.choose_label_distance(y_right_points)
+        x_up_distance = self.choose_label_distance(x_up_points)
+        x_down_distance = self.choose_label_distance(x_down_points)
+
+        #removing labels:
+        to_remove = []
+        for [key,value] in y_left_points.items():
+            if value == y_left_distance:
+                to_remove.extend([pixel for pixel in left if pixel.y == key and pixel.rgb() == black])
+
+        for [key,value] in y_right_points.items():
+            if value == y_right_distance:
+                to_remove.extend([pixel for pixel in right if pixel.y == key and pixel.rgb() == black])
+
+
+        for [key,value] in x_up_points.items():
+            if value == x_up_distance:
+                to_remove.extend([pixel for pixel in up if pixel.x == key and pixel.rgb() == black])
+
+
+        for [key,value] in x_down_points.items():
+            if value == x_down_distance:
+                to_remove.extend([pixel for pixel in down if pixel.x == key and pixel.rgb() == black])
+
+
+        #removing in all pixels
+
+        print "Removing label pixels..."
+        for pixel in to_remove:
+            self.pixels.remove(pixel)
+
+
+
+    #deprecated:
+    '''
+    def choose_label_distance(self,labels_dict):
+        new_dict = dict(labels_dict)
+        for [key,value] in labels_dict.items():
+            if key+1 in labels_dict:
+
+                if key in new_dict:
+                    new_dict.pop(key)
+                if key+1 in new_dict:
+                    new_dict.pop(key+1)
+
+
+        for [key,value] in new_dict.items():
+            print key,value
+
+        raw_input("stop choose")
+    '''
+
+    def choose_label_distance(self,labels_dict):
+
+        print "---\n"
+
+        l = []
+
+        for [key,value] in labels_dict.items():
+            if value > label_line_len_min:
+                #print key,value
+                l.append(value)
+
+        #most frequent
+        most_frequent = max(set(l), key=l.count)
+        #print most_frequent
+        return most_frequent
+
 
     def group_pixels(self):
         print "Grouping pixels..."
         new_pixels = []
 
-        for x in xrange(self.img_shape[1]):
-            column = [pixel for pixel in self.pixels if pixel.x == x]
-            if(len(column) > 0):
+        #remove single colors (not very often)
+        colors = [key for key in self.colors if self.colors[key] > colors_thr]#local variable
 
-                y_values = [pixel.y for pixel in column]
-                y_values_grouped = group_values(y_values)
-                for group in y_values_grouped:
-                    if len(group) > 0:
-                        y_mean = np.mean(group)
-                        y_middle = min(group, key=lambda y: abs(y-y_mean)) #choose closest to min
+        for color in colors:
+            print "\tFinding group of pixels for color " + str(color)
+            for x in xrange(self.img_shape[1]):
+                column = [pixel for pixel in self.pixels if pixel.x == x and tuple([pixel.r,pixel.g,pixel.b]) == color]
+                if(len(column) > 0):
 
-                        #todo:
-                        pix = next(pixel for pixel in column if pixel.x == x and pixel.y == y_middle)
-                        new_pixels.append(pix)
+
+                    y_values = [pixel.y for pixel in column]
+                    y_values_grouped = group_values(y_values)
+                    for group in y_values_grouped:
+                        if len(group) > 0:
+                            y_mean = np.mean(group)
+                            y_middle = min(group, key=lambda y: abs(y-y_mean)) #choose closest to min
+
+                            #todo:
+                            pix = next(pixel for pixel in column if pixel.x == x and pixel.y == y_middle)
+                            new_pixels.append(pix)
         self.pixels = new_pixels
 
     def detect_lines(self):
@@ -219,6 +386,7 @@ class Image:
                 #img[pixel.y,pixel.x] = [pixel.r,pixel.g,pixel.b]
                 pixel_old = pixel
                 pixel = neighbour(pixel,self.pixels,angles)
+                #pixel = neighbour(pixel,pixels_original,angles)
 
                 #calculate angle between pixels
                 if pixel is not None:
@@ -300,8 +468,9 @@ class Image:
 
         self.lines.sort(key= lambda s: len(s)) #sorting plots by length of them
         print "Writing data file..."
-
+        print self.lines
         for [i,pixels] in enumerate(self.lines):
+            print "Writing line " + str(i)
             f = open('data' + str(i) + '.dat','w')
             for pixel in pixels:
                 f.write(str(pixel.x) + "\t" + str(pixel.y) + "\n")
@@ -316,6 +485,7 @@ class Image:
         color = ["red", "green", "blue", "black", "yellow", "red", "green", "blue", "black", "yellow", "red", "green", "blue", "black", "yellow", "red", "green", "blue", "black", "yellow"] #todo: imrpveo
         for i in range(0,len(self.lines)):
             addplots_string += "\\addplot[color=" + color[i] + ", mark=none, smooth] file{data" + str(i) + ".dat};\n"
+            #addplots_string += "\\addplot[only marks, mark size=0.1, color=" + color[i] + "] file{data" + str(i) + ".dat};\n"
             #addplots_string += "\\addplot[only marks, mark size=0.1] file{data" + str(i) + ".dat};\n"
         '''
         \\addplot[mark=none] file{data.dats}; ,smooth
@@ -361,7 +531,7 @@ class Image:
         print "Done"
 
 
-
+    '''
     def draw(self):
 
         print "Drawing..."
@@ -373,5 +543,15 @@ class Image:
                 img[pixel.y,pixel.x] = [pixel.r,pixel.g,pixel.b]
 
         cv2.imwrite("wynik.bmp",img)
+    '''
+    def draw(self):
 
 
+        print "Drawing..."
+        img = np.ones([self.inside_img.shape[0],self.inside_img.shape[1],3]) * 255
+
+
+        for pixel in self.pixels:
+            img[pixel.y,pixel.x] = [pixel.r,pixel.g,pixel.b]
+
+        cv2.imwrite("wynik.bmp",img)

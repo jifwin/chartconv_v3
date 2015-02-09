@@ -64,4 +64,7 @@ class Pixel:
 
         return pixel
 
+    def rgb(self):
+        return [self.r,self.g,self.b]
+
 

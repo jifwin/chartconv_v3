@@ -27,6 +27,19 @@
 26. przyspieszyc calosc
 27. zle zadziala kat na 2.png - zrobione- pomoga zwiekszenie ilosci kontow
 28. grupowanie po kolorach!!
+29. dla 11.png tragedia!!!!!!!!
+30. generowanie strony z podgladem
+31. interfejs
+32. moze zrobic nierowna srednia - wage dla kata - zrobione
+33. zwiekszony zasieg poszukiwania
+33. problem z skalowaniem?
+
+35. todo : do labelek regularne odstepy - brac od maksymalnej i liczyc najlepsza nie odchylona
+36. co zrobic z krotszymi niz caly wykres liniami - problem closest neighbour i przecinania
+37. dodac tolerancje do dlugosci labelki bo jak nachdozi wykres to nie usuwa
+
+opisac do korusa:
+problem z usrednianiem lini tego samego koloru
 
 od korusa:
 legenda - musi byc w kwadracie -> przeparsowac ->pgfplots legenda -> dopasowanielini do legendy - kolor
