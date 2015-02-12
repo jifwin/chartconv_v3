@@ -1,5 +1,3 @@
-__author__ = 'grzegorz'
-
 import cv2
 import colorsys
 from pixel import Pixel
@@ -12,41 +10,27 @@ import math
 from pytesser import *
 import webcolors
 
-#parameters:
-'''
-# set in main.py by arguments
-#self.angles_thr = 50 #parameter, number of angles to calculate mean
-#self.angles_thr = 10 #parameter, number of angles to calculate mean samller better for big changes in plot
-self.line_thr = 10 #parameter, minimum number of pixels to be treated as line
-self.colors_thr = 10 #parameter, minimum numnber of color pixels to be grouped
-self.border_len = 5 #parameter, number of border pixels
-self.labels_lines_len = 50 #parameter, number of pixels for labels lines
-self.label_line_len_min = 5 #parameter, minimum lenght of label line
-'''
-
-# set in main.py by arguments
-'''
-self.angles_thr = arguments.angles #50
-self.line_thr = arguments.self.line_thr
-self.colors_thr = arguments.self.colors_thr
-self.border_len = arguments.self.border_len
-self.labels_lines_len = arguments.label_line_len
-self.label_line_len_min = arguments.self.label_line_len_min
-'''
-
-#add thr for dicts
-
 class Image:
     def __init__(self,path,arguments):
         self.path = path
         self.arguments = arguments
 
-        self.angles_thr = arguments.angles #50
+        #parameters for image class
+        self.plotarea = arguments.plotarea
+        self.legend_tol = arguments.legend_tol
+        self.legend_area = arguments.legend_area
+        self.extra_shift_legend = arguments.extra_shift_legend
+        self.lines_merge = arguments.lines_merge
+        self.border_thr = arguments.border_thr
+        self.angles_thr = arguments.angles
         self.line_thr = arguments.line_thr
         self.colors_thr = arguments.colors_thr
         self.border_len = arguments.border_len
         self.labels_lines_len = arguments.labels_lines_len
         self.label_line_len_min = arguments.label_line_len_min
+        self.min_line = arguments.min_legend_line
+        self.max_line = arguments.max_legend_line
+
 
         #parameters for neighbour:
         self.neighbours = arguments.neighbours
@@ -55,110 +39,81 @@ class Image:
     def load(self):
         print "Loading file..."
         self.img = cv2.imread(self.path)
-        self.img_shape = self.img.shape
+        self.img_shape = self.img.shape #image dimensions
         print "Loaded " + str(self.img_shape[0]) + "x" + str(self.img_shape[1]) + " image.\n"
 
 
     def detect_axis(self):
         print "Detecting axis..."
-        self.gray = cv2.cvtColor(self.img,cv2.COLOR_BGR2GRAY)
-        [self.o_point,self.x_axis_points,self.y_axis_points] = self.contour(self.gray)
+        self.gray = cv2.cvtColor(self.img,cv2.COLOR_BGR2GRAY) #converting to gray
+        [self.o_point,self.x_axis_points,self.y_axis_points] = self.contour(self.gray) #finding 0-point and axis points
         print "Found 0 point " + str(self.o_point) + "\n"
 
     def contour(self,gray):
-        go_next = False
-        self.legend_cnt = None
-        while not go_next:
+        go_next = False #correct contour found flag
+        self.legend_cnt = None #legend contour
+
+        #whole image area
+        img_area = gray.shape[0]*gray.shape[1]
+
+        thr = 0.005 #minimal contour size, used to remove really small contours
+
+        while not go_next: #while not found
+            #detecting contours
             ret,thresh = cv2.threshold(gray,127,255,1)
-            #cv2.imshow("thr",thresh)
-            contours,h = cv2.findContours(thresh,1,cv2.CHAIN_APPROX_SIMPLE) #find counters with aproximation to n-points
-            img_area = gray.shape[0]*gray.shape[1]
+            contours,h = cv2.findContours(thresh,1,cv2.CHAIN_APPROX_SIMPLE) #find contours with aproximation
 
-            #image area max: todo: improve
+            contours = [cv2.approxPolyDP(cnt,0.01*cv2.arcLength(cnt,True),True) for cnt in contours] #approx contour
+            contours = [cnt for cnt in contours if len(cnt) == 4] #rectangles only
+            contours = [cnt for cnt in contours if cv2.contourArea(cnt)/float(img_area)*100 > thr] #remove small contours
 
-            #minimum parameter: size of rectangle
-            thr = 0.005
+            last_shape = max(contours,key=lambda cnt: cv2.contourArea(cnt)) #contour with max area - border
+            max_area = cv2.contourArea(last_shape) #max area of contour
 
-            contours = [cv2.approxPolyDP(cnt,0.01*cv2.arcLength(cnt,True),True) for cnt in contours] #rectangles only
-            contours = [cnt for cnt in contours if len(cnt) == 4]
-            contours = [cnt for cnt in contours if cv2.contourArea(cnt)/float(img_area)*100 > thr]
-
-
-            last_shape = max(contours,key=lambda cnt: cv2.contourArea(cnt))
-            max_area = cv2.contourArea(last_shape)
-
-            percentage = max_area/float(img_area)*100
+            percentage = max_area/float(img_area)*100 #max area compared to whole image
             print "Found inside image. " + str(int(percentage)) + "% of image."
 
-            if(percentage > 50): #if more than 50% than this is the main rectangle
-                contours = [cnt for cnt in contours if not np.array_equal(last_shape,cnt)]
+            if(percentage > self.plotarea): #if more than 50% than this is the main rectangle
+                contours = [cnt for cnt in contours if not np.array_equal(last_shape,cnt)] #all except currently used
 
-                #cv2.drawContours(self.img,[cnt],0,(0,255,0),3)
-                #cv2.imshow("self.img",self.img)
-                #cv2.waitKey()
-
-                #last shape is border
                 #legend
-                #calculate diagonals:
+                #calculate diagonals
 
                 for cnt in contours:
 
-                    #print cnt
-                    #print len(cnt)
-
-                    #cv2.drawContours(self.img,[cnt],0,(0,255,0),3)
-                    #cv2.imshow("self.img",self.img)
-                    #cv2.waitKey()
-
-                    #continue
-
+                    #diagonals of contour
                     dig1 = self.points_distance(cnt[0],cnt[2])
                     dig2 = self.points_distance(cnt[1],cnt[3])
 
-                    #lines length
+                    #contour lines length
                     l0 = self.points_distance(cnt[0],cnt[1])
                     l1 = self.points_distance(cnt[1],cnt[2])
                     l2 = self.points_distance(cnt[2],cnt[3])
                     l3 = self.points_distance(cnt[3],cnt[0])
 
-                    if(min([dig1,dig2])/float(max([dig1,dig2])) >= 0.99 and #todo: paramer#if diagionals and sides equal
-                        min([l1,l3])/float(max([l1,l3])) >= 0.99 and
-                        min([l0,l2])/float(max([l0,l2])) >= 0.99 and #todo:parameter
-                        cv2.contourArea(cnt) < 0.3*cv2.contourArea(last_shape) #0.3 legend smaller than main contour (last shape)
+                    #if diagonals and sides equal
+                    if(min([dig1,dig2])/float(max([dig1,dig2])) >= self.legend_tol and
+                        min([l1,l3])/float(max([l1,l3])) >= self.legend_tol and
+                        min([l0,l2])/float(max([l0,l2])) >= self.legend_tol and
+                        cv2.contourArea(cnt) < self.legend_area*cv2.contourArea(last_shape) #if legend smaller than main contour
                     ):
 
                         self.legend_cnt = cnt
-                        print self.legend_cnt
-                        #cv2.drawContours(self.img,[cnt],0,(255,255,0),3)
-                        #cv2.imshow("self.img",self.img)
-                        #cv2.waitKey()
 
-                #legend_rectangle = max(contours, key=lambda cnt: cv2.contourArea(cnt))#new largest - legend
-                #print legend_rectangle
-                #cv2.drawContours(self.img, [legend_rectangle], 0, (0,255,0), 3)
-                #cv2.imshow("self.img",self.img)
-                #cv2.waitKey()
-                #take second larger as legend rectangles
                 go_next = True
             else:
-                print "Too small contour. Increasing contrast by 1%"
                 #increase contrast and back to while
-
-        #todo: numpy without loop
+                print "Too small contour. Increasing contrast by 1%"
 
         x_points = []
         y_points = []
-
 
         for item in last_shape:
             x_points.append(item[0][0])
             y_points.append(item[0][1])
 
-        #todo: make it to be 2-long only! approx to 15=16 etc
-
-
         #find 0-point as minimum/maximum value of x and y
-        o_point = [min(x_points), max(y_points)]
+        o_point = [min(x_points), max(y_points)] #0 point
         return [o_point,x_points,y_points]
 
     def points_distance(self,point1,point2):
@@ -166,11 +121,11 @@ class Image:
 
     def ocr_labels(self):
         print "Ocring labels..."
-        labels.crop(self.gray,self.o_point[0],self.o_point[1]) #improve, don't use files
+        labels.crop(self.gray,self.o_point[0],self.o_point[1])
         [self.x_labels, self.y_labels,self.x_type,self.y_type] = labels.ocr()
         print "Found labels:"
-        print "x:\t" + str(self.x_labels)
-        print "y:\t" + str(self.y_labels)
+        print "x:\t" + str(self.x_labels) + "\t type: " + self.x_type
+        print "y:\t" + str(self.y_labels) + "\t type: " + self.y_type
         self.labels = [min(self.x_labels),max(self.x_labels),min(self.y_labels),max(self.y_labels)]
         print "\n"
 
@@ -181,89 +136,82 @@ class Image:
             print "Analyzing legend..."
             x_legend = []
             y_legend = []
+
+            #find correct legen contours
             for item in self.legend_cnt:
                 x_legend.append(item[0][0])
                 y_legend.append(item[0][1])
 
+            #legend corners
             self.x_min_legend = min(x_legend)
             self.x_max_legend = max(x_legend)
             self.y_min_legend = min(y_legend)
             self.y_max_legend = max(y_legend)
 
-            extra_shift = 1 #para# meter in pixels, ignoring borders of legend
+            extra_shift = self.extra_shift_legend #pixels to ignore
 
+            #inside legend image
             self.legend = self.img[self.y_min_legend+extra_shift:self.y_max_legend-extra_shift,self.x_min_legend+extra_shift:self.x_max_legend-extra_shift]
 
-            cv2.imwrite('legend.png',self.legend) #todo: don't use file
+            #cv2.imwrite('legend.png',self.legend) #debug only
+            #legend_img = cv2.imread('legend.png') #debug only
 
             #detect straigh horizontal lines and colors
-            legend_img = cv2.imread('legend.png')
-            legend_size = legend_img.shape
+            legend_img = self.legend
+            legend_size = legend_img.shape #legend dimensions
             horizontal_size = legend_size[1]
             vertical_size = legend_size[0]
+
+            #detect lines
             gray = cv2.cvtColor(legend_img,cv2.COLOR_BGR2GRAY)
             edges = cv2.Canny(gray,50,150,apertureSize = 3)
 
-            minLineLength = 0.2*horizontal_size#todo: parameter percente of horizontal size
-            maxLineLength = 0.9*horizontal_size                 #todo: parameter
-            maxLineGap = 0
-            lines = cv2.HoughLinesP(edges,1,np.pi/180,50)
+            minLineLength = self.min_line*horizontal_size
+            maxLineLength = self.max_line*horizontal_size
+
+            lines = cv2.HoughLinesP(edges,1,np.pi/180,50) #hough transform - find lines
 
             legend_lines = []
 
             for x1,y1,x2,y2 in lines[0]:
-                length = math.sqrt(pow(x2-x1,2)+pow(y2-y1,2))
-                print length
+                length = math.sqrt(pow(x2-x1,2)+pow(y2-y1,2)) #length of line
 
-                if (minLineLength < length < maxLineLength and
-                    abs(x1-x2)) > 2: #todo: parameter #if not vertical line with tolerance
+                if (minLineLength < length < maxLineLength and #if appropriate length
+                    abs(x1-x2)) > 2: #and if not vertical (2 - parameter)
                         legend_lines.append([x1,y1,x2,y2])
-                        #cv2.line(legend_img,(x1,y1),(x2,y2),(0,255,0),2) # dont turn on - it changes color of line
-                        #cv2.imshow("legend",legend_img)
-                        #cv2.waitKey()
 
-            legend_lines.sort(key=lambda item: item[1])
+            legend_lines.sort(key=lambda item: item[1]) #sort by y
 
-            print legend_lines
-            print "asdf"
-            y_max = max(legend_lines, key=lambda line: line[2])[2]
-
+            y_max = max(legend_lines, key=lambda line: line[2])[2] #max value
 
             #averaging lines:
-            #todo: parameter, distance between lines to merge
-            avg_thr = 0.1*vertical_size #10%
+            avg_thr = self.lines_merge*vertical_size
 
             new_lines = []
             for line in legend_lines:
                 y = line[1]
+
                 #find closest
                 rest = [item for item in legend_lines if y != item[1]] #all but not current
-                closest = min(rest ,key=lambda item: abs(item[1]-y))
-                if abs(closest[1]-y) < avg_thr:
+                closest = min(rest ,key=lambda item: abs(item[1]-y)) #closest line
 
+                if abs(closest[1]-y) < avg_thr: #if close enough
                     avg_line = []
                     for i in xrange(len(closest)):#build closest line
-                        avg_line.append((closest[i]+line[i])/2.0)
+                        avg_line.append((closest[i]+line[i])/2.0) #avg line
+                    new_lines.append(avg_line) #add avg line
 
-                    new_lines.append(avg_line) #add avg of two lines
 
-
-            print "\n\n"
             legend_lines = [list(x) for x in set(tuple(x) for x in new_lines)] #make unique
-            print legend_lines
 
             #find colors of each lines
-
-            #add color
-
             new_lines = []
             for line in legend_lines:
                 #take avg point of line
                 avg_x = int(np.mean([line[0],line[2]]))
                 avg_y = int(np.mean([line[1],line[3]]))
+                #color of line
                 color = legend_img[avg_y,avg_x]
-
-                print color
 
                 #increase color saturation:
                 hsv = list(colorsys.rgb_to_hsv(color[0]/float(255), color[1]/float(255), color[2]/float(255)))
@@ -280,29 +228,26 @@ class Image:
                 new_lines.append([[avg_x,avg_y],color])
             legend_lines = new_lines #with color and single pixel
 
-            print legend_lines
-
             #remove lines before OCR
-
             legend_texts_img = legend_img[:,y_max+1:]
+
             #increase size for better recognition
             legend_texts_img = cv2.resize(legend_texts_img, (0,0), fx=5, fy=5)
             cv2.imwrite("legend_texts.png",legend_texts_img)
 
             #detect strings
             legend_string = image_file_to_string('legend_texts.png').split("\n")
-            legend_string = [string for string in legend_string if len(string) > 0 ]
-            print legend_string
+            legend_string = [string for string in legend_string if len(string) > 0] #remove empty
+
             self.legend = [] #string + color
             if len(legend_string) == len(legend_lines):
                 for i in xrange(len(legend_string)):
                     self.legend.append([legend_string[i],legend_lines[i][1]]) #1 - line color            else:
             else:
-                print "length of strings and lines not equal!"
+                print "Length of strings and lines not equal!"
 
+            print "Legend:"
             print self.legend
-
-            raw_input("stop")
 
     def crop(self):
         print "Cropping inside image..."
@@ -312,8 +257,6 @@ class Image:
         x_max = max(self.x_axis_points)
         y_min = min(self.y_axis_points)
         y_max = max(self.y_axis_points)
-
-        shift = 0 #deprecated
 
         #if legend detected:
         if self.legend_cnt != None:
@@ -327,13 +270,10 @@ class Image:
                         ):
                         self.img[y,x] = [255,255,255] #paint white
 
-        #cv2.imshow("self.img",self.img)
-        #cv2.waitKey()
 
-        #in legend area - paint white
-        self.inside_img = self.img[y_min+shift:y_max-shift,x_min+shift:x_max-shift]
-
-        cv2.imwrite('inside.png',self.inside_img) #todo: don't use file
+        #inside image - main area of plot
+        self.inside_img = self.img[y_min:y_max,x_min:x_max]
+        cv2.imwrite('inside.png',self.inside_img)
 
     def find_pixels(self):
         print "Finding pixels..."
@@ -342,7 +282,7 @@ class Image:
         for x in xrange(self.inside_img.shape[0]):
             for y in xrange(self.inside_img.shape[1]):
                 rgb_values = self.inside_img[x,y]
-                if sum(rgb_values) != 3*255: #white
+                if sum(rgb_values) != 3*255: #if not white
 
                     #increasing saturation
                     rgb =[item/float(255) for item in rgb_values]
@@ -358,30 +298,34 @@ class Image:
                     rgb_values = list(colorsys.hsv_to_rgb(hsv[0],hsv[1],hsv[2]))#convert back to rgb
                     rgb_values = [item*255 for item in rgb_values] #normalize to 255
 
-                    new_pixel = Pixel(y,x,rgb_values[0],rgb_values[1],rgb_values[2])
+                    new_pixel = Pixel(y,x,rgb_values[0],rgb_values[1],rgb_values[2]) #declare new pixel with coordinates and rgb values
 
+                    #add color to dict
                     rgb_tuple = tuple(rgb_values)
                     if rgb_tuple not in self.colors:
                         self.colors[rgb_tuple] = 1
                     else:
                         self.colors[rgb_tuple] += 1
-                    self.pixels.append(new_pixel)
+
+                    self.pixels.append(new_pixel) #add new pixel to pixel list
 
     def remove_border_lines(self):
         print "Removing border lines..."
         x_points = {}
         y_points = {}
 
+        #corners of main image
         self.x_min = min(self.pixels, key=lambda pixel: pixel.x).x
         self.x_max = max(self.pixels, key=lambda pixel: pixel.x).x
         self.y_min = min(self.pixels, key=lambda pixel: pixel.y).y
         self.y_max = max(self.pixels, key=lambda pixel: pixel.y).y
 
+        #count pixels on borders
         for item in self.pixels:
-
             x = item.x
             y = item.y
 
+            #if pixel in checking area
             if ((x <= self.x_min+self.border_len or
                 x >= self.x_max-self.border_len or
                 y <= self.y_min+self.border_len or
@@ -410,18 +354,15 @@ class Image:
                 y_mean = y_mean/len(y_points)
 
                 #average points number
-                #if a-times more that avg then remove
+
+                thr = self.border_thr
                 #candidates to remove
-
-                thr = 10 #a-times parameter
-
-                new_x = {k: v for k, v in x_points.iteritems() if v > thr*x_mean}.keys()
+                new_x = {k: v for k, v in x_points.iteritems() if v > thr*x_mean}.keys() #if thr-times more that avg then remove
                 new_y = {k: v for k, v in y_points.iteritems() if v > thr*y_mean}.keys()
 
         new_pixels = []
 
         #removing points
-
         for item in self.pixels:
             x = item.x
             y = item.y
@@ -429,14 +370,14 @@ class Image:
             if ((x not in new_x) and (y not in new_y)):
                 new_pixels.append(item)
 
-        self.pixels = new_pixels #todo: TURN ON!
+        self.pixels = new_pixels #replace with new pixels
 
     def remove_labels_lines(self):
         new_pixels = []
 
         black = [0,0,0]
-        #find border pixels
 
+        #find border pixels (black)
         left = [pixel for pixel in self.pixels if pixel.x < self.x_min+self.labels_lines_len and black == pixel.rgb()]
         right = [pixel for pixel in self.pixels if pixel.x > self.x_max-self.labels_lines_len and black == pixel.rgb()]
         up = [pixel for pixel in self.pixels if pixel.y < self.y_min+self.labels_lines_len and black == pixel.rgb()]
@@ -474,32 +415,7 @@ class Image:
                 x_down_points[pixel.x] = 0
 
 
-
-
-        '''
-        for [key,value] in y_left_points.items():
-            print key, value
-
-        self.choose_label_distance(y_left_points)
-
-        raw_input("stop after 1")
-        print "---\n"
-
-        for [key,value] in y_right_points.items():
-            print key, value
-
-        print "---\n"
-
-        for [key,value] in x_down_points.items():
-            print key, value
-
-        print "---\n"
-
-        for [key,value] in x_up_points.items():
-            print key, value
-        '''
-
-        #choose distance label
+        #choose distance label - choosing most frequent
         y_left_distance = self.choose_label_distance(y_left_points)
         y_right_distance = self.choose_label_distance(y_right_points)
         x_up_distance = self.choose_label_distance(x_up_points)
@@ -515,11 +431,9 @@ class Image:
             if value == y_right_distance:
                 to_remove.extend([pixel for pixel in right if pixel.y == key and pixel.rgb() == black])
 
-
         for [key,value] in x_up_points.items():
             if value == x_up_distance:
                 to_remove.extend([pixel for pixel in up if pixel.x == key and pixel.rgb() == black])
-
 
         for [key,value] in x_down_points.items():
             if value == x_down_distance:
@@ -527,38 +441,13 @@ class Image:
 
 
         #removing in all pixels
-
         print "Removing label pixels..."
         for pixel in to_remove:
             self.pixels.remove(pixel)
 
-
-
-    #deprecated:
-    '''
     def choose_label_distance(self,labels_dict):
-        new_dict = dict(labels_dict)
-        for [key,value] in labels_dict.items():
-            if key+1 in labels_dict:
-
-                if key in new_dict:
-                    new_dict.pop(key)
-                if key+1 in new_dict:
-                    new_dict.pop(key+1)
-
-
-        for [key,value] in new_dict.items():
-            print key,value
-
-        raw_input("stop choose")
-    '''
-
-    def choose_label_distance(self,labels_dict):
-
-
 
         l = []
-
         for [key,value] in labels_dict.items():
             if value > self.label_line_len_min:
                 #print key,value
@@ -566,7 +455,6 @@ class Image:
 
         #most frequent
         most_frequent = max(set(l), key=l.count)
-        #print most_frequent
         return most_frequent
 
 
@@ -574,15 +462,15 @@ class Image:
         print "Grouping pixels..."
         new_pixels = []
 
-        #remove single colors (not very common)
-        colors = [key for key in self.colors if self.colors[key] > self.colors_thr]#local variable
+        #removing single colors (not very common)
+        colors = [key for key in self.colors if self.colors[key] > self.colors_thr]
 
         for color in colors:
             print "\tFinding group of pixels for color " + str(color)
             for x in xrange(self.img_shape[1]):
+                #find all pixels in this color in this column
                 column = [pixel for pixel in self.pixels if pixel.x == x and tuple([pixel.r,pixel.g,pixel.b]) == color]
                 if(len(column) > 0):
-
 
                     y_values = [pixel.y for pixel in column]
                     y_values_grouped = group_values(y_values)
@@ -591,7 +479,6 @@ class Image:
                             y_mean = np.mean(group)
                             y_middle = min(group, key=lambda y: abs(y-y_mean)) #choose closest to min
 
-                            #todo:
                             pix = next(pixel for pixel in column if pixel.x == x and pixel.y == y_middle)
                             new_pixels.append(pix)
         self.pixels = new_pixels
@@ -601,16 +488,15 @@ class Image:
         self.lines = []
         i = 0
         j = 0
-        pixels_original = list(self.pixels)
+        #pixels_original = list(self.pixels) #debug only
         while(len(self.pixels) > 0):
 
             line = []
             angles = []
             pixel = self.pixels[i]
 
-            while(pixel is not None):
+            while(pixel is not None): #while neighbour found
                 line.append(pixel)
-                #img[pixel.y,pixel.x] = [pixel.r,pixel.g,pixel.b]
                 pixel_old = pixel
                 pixel = neighbour(pixel,self.pixels,angles,self.neighbours,self.max_dist)
 
@@ -629,20 +515,19 @@ class Image:
                     pixels_inside = [item for item in self.pixels if x_borders[0] <= item.x <= x_borders[1] and y_borders[0] <= item.y <= y_borders[1]]
 
                     for item in pixels_inside:
-                        #print str(item)
                         self.pixels.remove(item)
 
                 if pixel_old in self.pixels:
                     self.pixels.remove(pixel_old)
 
             j += 1
-            if len(line) > self.line_thr:
+
+            if len(line) > self.line_thr: #if line longer than threshold
                 self.lines.append(line)
 
     def change_axis(self):
         print "Chaning axises..."
 
-        max_x_point = self.x_max
         max_y_point = self.y_max
 
         for i in xrange(len(self.lines)): #iterate over lines
@@ -656,35 +541,14 @@ class Image:
         x_range = self.labels[1]-self.labels[0]
         y_range = self.labels[3]-self.labels[2]
 
-        #todo: improve finding max, together with chanign axis
-        max_x_point = 0
-        max_y_point = 0
-
-
-        #todo: remove this?:
-        '''
-        for line in self.lines:
-            for pixel in line:
-                if pixel.x > max_x_point:
-                    max_x_point = pixel.x
-                if pixel.y > max_y_point:
-                    max_y_point = pixel.y
-        '''
-
         #calculated before
-        #todo:
         max_x_point = self.x_max
         max_y_point = self.y_max
-        #raw_input()
 
         scale_x = x_range/float(max_x_point)
         scale_y = y_range/float(max_y_point)
 
-        #todo: use comprehensive list
-        new_pixels = []
 
-
-        #log scaling
         if self.x_type == "log":
             pass
 
@@ -705,21 +569,20 @@ class Image:
                 i += 1
 
             print y_conv_scale
-            raw_input()
+
 
         #scaling
-
         for i in xrange(len(self.lines)): #iterate over lines
-            print "new line"
             for j in xrange(len(self.lines[i])): #iterate over line - pixels
                 tmp_pix = self.lines[i][j]
-
 
                 tmp_pix.x = self.labels[0]+scale_x*tmp_pix.x
                 tmp_pix.y = self.labels[2]+scale_y*tmp_pix.y
                 print tmp_pix.x,tmp_pix.y
                 #raw_input("punkt")
 
+                '''
+                #not working yet
                 if self.y_type == "log":
                     #find between which values
                     #todo: improve
@@ -734,33 +597,25 @@ class Image:
 
                     log_value = pow(down[1],distance)*down[1]
                     tmp_pix.y = log_value
-                    print log_value
 
-                    #raw_input("stop")
+                #not working yet end
+                '''
 
                 self.lines[i][j] = tmp_pix
-                #raw_input()
+
 
     def legend_to_lines(self):
         print "Legend to lines..."
-
         new_legend = []
-        #print self.legend
-        #raw_input("legenda")
         for item in self.legend:
             color = item[1]
             for line in self.lines:
-
-                print line[0].rgb()#debug
-
                 if line[0].rgb() == color: #if first pixel of line matches color
                     index = self.lines.index(line)#posititon in lines list
                     new_legend.append([item[0],index]) #name and index
-                    #raw_input("dopasowano")
 
         new_legend.sort(key=lambda item: item[1])
         self.legend = new_legend
-        #raw_input("stop")
 
 
     def write_data_to_file(self):
@@ -772,31 +627,22 @@ class Image:
             print "Writing line " + str(i)
             f = open('data' + str(i) + '.dat','w')
             for pixel in pixels:
+                #write pixel coordinates
                 f.write(str(pixel.x) + "\t" + str(pixel.y) + "\n")
             f.close()
 
 
     def create_ps(self):
         print "Creating ps file"
-
         legend_string = ""
 
         for entry in self.legend:
-            legend_string += ("\\addlegendentry{" + entry[0] + "}") #entry[0] - entry string
+            legend_string += ("\\addlegendentry{" + entry[0] + "}") #entry[0] - legend string
 
         addplots_string = ""
-        #todo: !!!!!!!!!!!!!!!1 colors
         for i in range(0,len(self.lines)):
-            #todo : imrpvoe to match with legend
             color = self.get_colour_name(self.lines[i][0].rgb()) #rgb of first pixel
             addplots_string += "\\addplot[color=" + color + ", mark=none, smooth] file{data" + str(i) + ".dat};\n"
-            #addplots_string += "\\addplot[only marks, mark size=0.1, color=" + color[i] + "] file{data" + str(i) + ".dat};\n"
-            #addplots_string += "\\addplot[only marks, mark size=0.1] file{data" + str(i) + ".dat};\n"
-        '''
-        \\addplot[mark=none] file{data.dats}; ,smooth
-        only marks
-        '''
-
 
         test_text = """
             \documentclass{standalone}
@@ -809,8 +655,7 @@ class Image:
             \\begin{axis}
             [xlabel=x,ylabel=y,
              xmin=""" + str(self.labels[0]) + """, xmax=""" + str(self.labels[1]) + """, ymin=""" + str(self.labels[2]) + """, ymax=""" + str(self.labels[3]) + """,
-             width=\\textwidth,
-             ymode=log]
+             width=\\textwidth]
             """
 
         test_text += addplots_string
@@ -824,7 +669,6 @@ class Image:
             """
 
 
-        #todo: obsluga bledow otwarcia plikow itp
         f = open('test.tex','w')
         f.write(test_text)
         f.close()
@@ -834,25 +678,10 @@ class Image:
         os.system('pdf2ps test.pdf test.ps')
         os.system('rm test.pdf')
         os.system('mv test.ps ' + self.path + ".ps")
-        # todo: !! os.system('rm data*.dat')
+        os.system('rm data*.dat')
         print "Done"
 
-
-    '''
     def draw(self):
-
-        print "Drawing..."
-        print str(len(self.lines)) + " lines to draw."
-        img = np.ones([self.inside_img.shape[0],self.inside_img.shape[1],3]) * 255
-
-        for line in self.lines:
-            for pixel in line:
-                img[pixel.y,pixel.x] = [pixel.r,pixel.g,pixel.b]
-
-        cv2.imwrite("wynik.bmp",img)
-    '''
-    def draw(self):
-
 
         print "Drawing..."
         img = np.ones([self.inside_img.shape[0],self.inside_img.shape[1],3]) * 255
@@ -863,7 +692,8 @@ class Image:
 
         cv2.imwrite("wynik.bmp",img)
 
-    def get_colour_name(self,rgb_triplet): #pip install webcolors
+    #get color name by rgb using css21 standard
+    def get_colour_name(self,rgb_triplet):
         print rgb_triplet
         min_colours = {}
         for key, name in webcolors.css21_hex_to_names.items():
